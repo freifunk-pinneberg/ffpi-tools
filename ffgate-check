@@ -1,0 +1,73 @@
+#!/bin/bash
+# 
+# ffgate-check - WIP
+#
+# Ziel: Prüfen, ob ein Exit-VPN funktionsfähig ist, bei
+# einem Problem schwenken zu einem anderen Exit und im
+# schlimmsten Fall deaktivieren der Gatewayfunktion.
+#
+# siehe auch: https://wiki.luebeck.freifunk.net/gatewayconfig
+#
+# TODO
+# - Umsetzen nach python
+# - Absetzen einer Meldung an Zabbix
+# - Auswerten einer zentralen Community-Konfigurationsdatei
+#
+VPNCONF=$(grep -e "^AUTOSTART=" /etc/default/openvpn)
+INTERFACE=$(sed -e 's/^"//' -e 's/"$//' <<< ${VPNCONF#*=})
+TESTIP=217.172.186.141 # gate05
+
+. /lib/lsb/init-functions
+
+if [ ! $UID -eq 0 ]; then
+    log_failure_msg "This script must be run as user root!"
+    exit 1
+fi
+
+# Prüfe ob OpenVPN läuft
+log_daemon_msg "OpenVPN process"
+if [ `pgrep openvpn` ]; then
+    log_progress_msg " running"
+    log_end_msg 0
+else
+    log_progress_msg " not running"
+    log_end_msg 1
+    exit 1
+fi
+
+# prüfe, ob das angegebene Interface überhaupt existiert
+log_daemon_msg "Interface $INTERFACE"
+if [ -d "/sys/class/net/$INTERFACE" ]; then
+    log_progress_msg " exists"
+    log_end_msg 0
+else
+    log_progress_msg " does not exist"
+    log_end_msg 1
+    exit 1
+fi
+
+# Prüfe, ob die Firewall auf das korrekte VPN-Interface eingestellt ist
+log_daemon_msg "Firewall-Interface"
+NATIF=$(iptables -t nat -vnL | grep MASQUERADE | awk '{$1=$1};1' | cut -d' ' -f 7)
+if test "$NATIF" == "$INTERFACE" ; then
+    log_progress_msg " is correct"
+    log_end_msg 0
+else
+    log_progress_msg " is wrong ($NATIF)"
+    log_end_msg 1
+    exit 1
+fi
+
+# Prüfe ob ein externes Ping durch das Interface funktioniert
+log_daemon_msg "Tunnel $INTERFACE"
+ping -q -I $INTERFACE $TESTIP -c 4 -i 1 -W 5 >/dev/null 2>&1
+if test $? -eq 0; then
+    log_progress_msg " is up"
+    log_end_msg 0
+else
+    log_progress_msg " is down"
+    log_end_msg 1
+    exit 1
+fi
+
+exit 0
