@@ -104,12 +104,14 @@ def fn_node_net_mesh_ifaces():
             for iface in map(lambda line: line.split(':')[0], call(['batctl', '-m', cfg['interface'], 'if']))]
 
 def fn_exitvpn_provider():
-    # Wir arbeiten mit der Standardkonfigurationsdatei von OpenVPN.
-    # Dort ist immer unser aktuell verwendeter Exit-Tunnel eingetragen.
-    # Wenn OpenVPN konfiguriert ist, aber kein Tunnel verwendet wird,
-    # steht in der Konfiguration 'none'. Zur Unterscheidung wird im 
-    # Fehlerfall 'n/a' zurückgeliefert. Das kommt z.B. vor, wenn 
-    # gar kein  OpenVPN installiert ist.
+    """ 
+    Wir arbeiten mit der Standardkonfigurationsdatei von OpenVPN.
+    Dort ist immer unser aktuell verwendeter Exit-Tunnel eingetragen.
+    Wenn OpenVPN konfiguriert ist, aber kein Tunnel verwendet wird,
+    steht in der Konfiguration 'none'. Zur Unterscheidung wird im 
+    Fehlerfall 'n/a' zurückgeliefert. Das kommt z.B. vor, wenn 
+    gar kein  OpenVPN installiert ist.
+    """
     try:
         for line in open('/etc/default/openvpn'):
             if line.startswith('AUTOSTART='):
@@ -124,6 +126,8 @@ def fn_exitvpn_country():
     ISO 3166 Country Code
     """
     provider = fn_exitvpn_provider()
+    if provider in ('none', 'n/a'):
+        return 'n/a'
     for line in open('/etc/openvpn/' + provider.lower() + '.conf'):
         if line.startswith('## ExitCountry = '):
             k, v = line.split(" = ")
