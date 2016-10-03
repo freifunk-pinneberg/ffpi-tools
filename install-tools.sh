@@ -1,6 +1,7 @@
 #!/bin/sh
 
-install fastd-status.py /usr/local/bin
-install ffgate-check /usr/local/bin
-install alfred-announce.py /usr/local/bin
+install -v fastd-status.py /usr/local/bin
+install -v ffgate-check /usr/local/bin
+install -v alfred-announce.py /usr/local/bin
 
+install -v init.d/fastd /etc/init.d
