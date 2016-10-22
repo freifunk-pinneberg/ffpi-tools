@@ -1,0 +1,186 @@
+#! /bin/sh
+### BEGIN INIT INFO
+# Provides:             redis-cluster
+# Required-Start:       $syslog $remote_fs
+# Required-Stop:        $syslog $remote_fs
+# Should-Start:         $local_fs
+# Should-Stop:          $local_fs
+# Default-Start:        2 3 4 5
+# Default-Stop:         0 1 6
+# Short-Description:    Redis Cluster - Persistent key-value db
+# Description:          This script will start multiple instances of the 
+#                       redis server as defined in /etc/redis
+### END INIT INFO
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/local/bin/redis-server
+DESC="Redis Server"
+CONFIG_DIR=/etc/redis
+PIDDIR=/var/run/redis
+NAME=redis-server
+DEFAULTSFILE=/etc/default/$NAME
+
+# Exit if the package is not installed
+test -x $DAEMON || exit 0
+
+# Exit if no config directory exists
+test -d $CONFIG_DIR || exit 0
+
+# Source defaults file
+test -r $DEFAULTSFILE   && . $DEFAULTSFILE
+
+# Create run directory if it not exists
+if [ ! -d $PIDDIR ]; then
+    mkdir $PIDDIR
+    chown redis. $PIDDIR
+fi
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+#
+# Start a single redis daemon instance
+#
+start_instance () {
+	# $1 - Absolute path of configfile for this instance 
+	#      e.g. '/etc/redis/master-7000.conf'
+	FILENAME=$(basename "$1")
+	INSTANCE="${FILENAME%.*}"
+	PIDFILE=$PIDDIR/$INSTANCE.pid
+	log_begin_msg "Starting $NAME instance '$INSTANCE'"
+	if [ ! -f $1 ]; then
+		log_end_msg 1
+		return 2
+	fi
+	if start-stop-daemon --start --quiet --umask 007 --chuid redis:redis \
+		--name $INSTANCE --exec $DAEMON -- $1
+	then
+		log_end_msg 0
+	else
+		log_end_msg 1
+		return 2
+	fi
+}
+
+#
+# Stop a single redis daemon instance
+#
+stop_instance () {
+	# $1 - Name of instance 
+	#      e.g. 'master-7000'
+	log_begin_msg "Stopping $NAME instance '$1'" 
+	PIDFILE=$PIDDIR/$INSTANCE.pid
+	if [ ! -f $PIDFILE ]; then
+		log_end_msg 1
+		return 2
+	fi
+	if start-stop-daemon --stop --retry forever/TERM/1 --quiet --oknodo --pidfile $PIDFILE --exec $DAEMON
+	then
+		log_end_msg 0
+	else
+		log_end_msg 1
+	fi
+}
+
+#
+# Get status for a redis daemon instance
+#
+status_instance () {
+	# $1  - Name of instance
+	#       e.g. 'slave-7001'
+	CONFIG=$CONFIG_DIR/$INSTANCE.conf
+	if [ ! -f $CONFIG ]; then
+		log_warning_msg "$NAME '$INSTANCE': missing $CONFIG file!"
+	fi
+	status_of_proc -p $PIDDIR/$INSTANCE.pid "$NAME" "$NAME '$INSTANCE'"
+}
+
+case "$1" in
+  start)
+	if [ "$RUN_DAEMON" = "no" ]; then
+		log_warning_msg "Not starting $DESC (disabled in $DEFAULTSFILE)."
+		exit 0
+	fi
+
+	if [ -n "$ULIMIT" ]
+	then
+		ulimit -n $ULIMIT
+	fi
+
+	# Alle .conf-Dateien werden abgearbeitet
+	if [ "$#" -gt 1 ] ; then
+		# start only given instances
+		shift
+		for INSTANCE in "$@" ; do
+			start_instance $CONFIG_DIR/$INSTANCE.conf
+		done
+	else
+		for CONFIG in $CONFIG_DIR/*.conf ; do
+			if [ -e $CONFIG ] ; then # Make sure it isn't an empty match
+				start_instance $CONFIG
+			fi
+		done
+	fi
+	;;
+  stop)
+  	# If arguments are instance names terminate this else terminate all instances
+	if [ "$#" -gt 1 ] ; then
+		# stop only given instances
+		shift
+		for INSTANCE in "$@" ; do
+			stop_instance $INSTANCE
+		done
+	else
+		# stop all instances
+		for PIDFILE in $PIDDIR/*.pid ; do
+			if [ -e "$PIDFILE" ] ; then # Make sure it isn't an empty match
+				FILENAME=$(basename "$PIDFILE")
+				INSTANCE="${FILENAME%.*}"
+				stop_instance $INSTANCE
+			fi
+		done
+	fi
+	;;
+  restart|force-reload)
+	if [ "$RUN_DAEMON" = "no" ]; then
+		log_warning_msg "Not restarting $DESC (disabled in $DEFAULTSFILE)."
+		exit 0
+	fi
+	# TODO schöner machen!
+	shift
+	${0} stop $@
+	${0} start $@
+	;;
+  status)
+  	# If arguments are instance names get status for these else for all instances
+	if [ "$#" -gt 1 ] ; then
+		# status for given instances
+		shift
+		for INSTANCE in "$@" ; do
+			status_instance $INSTANCE
+		done
+	else
+		# status for all instances
+		COUNTER=0
+		for PIDFILE in $PIDDIR/*.pid ; do
+			if [ -e "$PIDFILE" ] ; then # Make sure it isn't an empty match
+				FILENAME=$(basename "$PIDFILE")
+				INSTANCE="${FILENAME%.*}"
+				status_instance $INSTANCE
+				COUNTER=$((COUNTER+1))
+			fi
+		done
+		if [ $COUNTER -eq 0 ] ; then
+			log_action_msg "No instance of $NAME found"
+		fi
+	fi
+	;;
+
+  *)
+	echo "Usage: /etc/init.d/redis-cluster {start|stop|restart|force-reload}" >&2
+	exit 1
+	;;
+esac
+
+exit 0
