@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Gateway Statistiken
+/usr/local/bin/vnstati.sh
