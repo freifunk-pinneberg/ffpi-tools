@@ -20,7 +20,7 @@ Es werden ermittelt:
 
 Hinweis(e):
   - https://github.com/ffnord/ffnord-alfred-announce
-  - http://www.open-mesh.org/projects/alfred/wiki  
+  - http://www.open-mesh.org/projects/alfred/wiki
   - ifstat ansehen
   - dstat ansehen (Python)
   - Konfigurationsverzeichnis: /etc/alfred
@@ -42,6 +42,7 @@ Version  Datum       Änderung(en)                                           von
 
 import os
 import sys
+import glob
 import platform
 import getopt
 import signal
@@ -100,7 +101,7 @@ def fn_node_net_mesh_ifaces():
     # "network": { "mesh": { "bat0": { "interfaces": { "tunnel": [ ...
     # Die Stelle mit "bat0" müßte dynamisch aufgrund der Interfaces
     # zusammengebaut werden
-    return [open('/sys/class/net/' + iface + '/address').read().strip() 
+    return [open('/sys/class/net/' + iface + '/address').read().strip()
             for iface in map(lambda line: line.split(':')[0], call(['batctl', '-m', cfg['interface'], 'if']))]
 
 def fn_exitvpn_provider():
@@ -121,7 +122,7 @@ def fn_exitvpn_provider():
         pass
     return 'n/a'
 
-def fn_exitvpn_country():  
+def fn_exitvpn_country():
     """
     ISO 3166 Country Code
     """
@@ -138,7 +139,17 @@ def fn_batman_version():
     return open('/sys/module/batman_adv/version').read().strip()
 
 def fn_fastd_enabled():
-    return True
+    """
+    Prüfe, ob das init-script existiert und in rc.d aktiviert ist
+    - aktuellen Runlevel ermitteln
+    - suche einen passenden Link im RC-Verzeichnis
+    - prüfe, ob das Script tatsächlich existiert
+    """
+    runlevel = int(call(['runlevel'])[0].split(' ')[1])
+    fname = glob.glob("/etc/rc%d.d/S??fastd" % runlevel)
+    if not fname:
+        return False
+    return os.path.isfile(fname[0])
 
 def fn_fastd_version():
     return call(['fastd', '-v'])[0].split(' ')[1]
@@ -234,7 +245,7 @@ item = {
     'node.software.batman_adv.version': { 'interval': 3600, 'exec': fn_batman_version },
     'node.software.fastd.version': { 'interval': 3600, 'exec': fn_fastd_version },
     'node.software.fastd.enabled': { 'interval': 60, 'exec': fn_fastd_enabled },
-    'node.software.fastd.port': { 'interval': 36000, 'exec': fn_fastd_port },
+    'node.software.fastd.port': { 'interval': 3600, 'exec': fn_fastd_port },
     'node.software.firmware.base': { 'interval': 3600, 'exec': fn_firmware_base },
     'node.software.firmware.release': { 'interval': 3600, 'exec': fn_firmware_release },
     'node.hardware.model': { 'interval': 3600, 'exec': fn_hardware_model },
@@ -288,12 +299,12 @@ def merge_dict(d1, d2):
 def set_loglevel(nr):
     # Nummer nach Level umsetzen
     levels = [None, logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
-    try: 
+    try:
         level = levels[nr]
     except:
         level = logging.INFO
     return level
- 
+
 def usage():
     print "Alfred Announce Daemon for Gateways"
     print "Version %s" % __version__
@@ -355,7 +366,7 @@ if __name__ == "__main__":
     merge_dict(data, statics)
 
     # Aufteilen in die jew. Datentypen
-    nodeinfo = data['node']   
+    nodeinfo = data['node']
     statistics = data['statistics']
     
     cnodeinfo = zlib.compress(json.dumps(nodeinfo))
