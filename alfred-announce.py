@@ -37,6 +37,7 @@ Version  Datum       Änderung(en)                                           von
 -------- ----------- ------------------------------------------------------ ----
 0.1      2015-10-18  Änderungsprotokoll eingebaut                           tho
 0.2      2016-08-30  Automatisierung Land des Exit-VPNs                     tho
+0.3      2016-12-04  DHCPD-Leases integrieren zur Anzeige der Clientanz.    tho
 
 """
 
@@ -54,6 +55,8 @@ import socket
 import zlib
 import time
 import logging
+import re
+import datetime
 
 cfg = {
     'logfile': '/var/log/alfred-announced.log',
@@ -233,7 +236,23 @@ def fn_fastd_peers():
                 npeers += 1
     return npeers
 
-# Hinweis: Die durch Punkte getrennten Teilschlüssel müssen gültige                        
+def fn_dhcpd_leases():
+    regex_leaseblock = re.compile(r"lease (?P<ip>\d+\.\d+\.\d+\.\d+) {(?P<config>[\s\S]+?)\n}")
+    regex_properties = re.compile(r"\s+(?P<key>\S+) (?P<value>[\s\S]+?);")
+    leases = 0
+    with open("/var/lib/dhcp/dhcpd.leases") as lease_file:
+        macs = set()
+        for match in regex_leaseblock.finditer(lease_file.read()):
+             block = match.groupdict()
+             properties = {key: value for (key, value) in regex_properties.findall(block['config'])}
+             if properties['binding'].split(' ')[1] == 'active' and properties['ends'] != 'never':
+                 dt_ends = datetime.datetime.strptime(properties['ends'][2:], "%Y/%m/%d %H:%M:%S")
+                 if dt_ends > datetime.datetime.utcnow() and properties['hardware'].startswith('ethernet'):
+                     macs.add(properties['hardware'][9:])
+        leases = len(macs)
+    return leases
+
+# Hinweis: Die durch Punkte getrennten Teilschlüssel müssen gültige 
 # PHP-Variablennamen sein.
 item = {
     'node.hostname': { 'interval': 3600, 'exec': fn_node_hostname },
@@ -257,8 +276,8 @@ item = {
     'statistics.traffic': { 'interval': 60, 'exec': fn_traffic },
     'statistics.uptime': { 'interval': 60, 'exec': fn_uptime },
     'statistics.peers': { 'interval': 60, 'exec': fn_fastd_peers },
+    'statistics.leases': { 'interval': 60, 'exec': fn_dhcpd_leases },
 }
-
 
 # Die Meßwerte nach Intervall gruppieren
 #items_by_interval = defaultdict(list)
