@@ -1,8 +1,11 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Vergleiche
 # dhcp-lease-list --lease /var/lib/dhcp/dhcpd.leases
 
+import sys
+import getopt
 import re
 import datetime
 
@@ -22,5 +25,32 @@ def count_dhcp_leases():
         leases = len(macs)
     return leases
 
+def usage():
+    print "DHCP leases counter"
+    print "Version 1.1"
+    print
+    print "Options"
+    print " -n  numeric output only"
+    print
+
 if __name__ == "__main__":
-    print "%d unique active leases" % count_dhcp_leases()
+
+    verbose = True
+
+    try:
+        opts, args = getopt.gnu_getopt(sys.argv[1:], "nh", ["help"])
+    except getopt.GetoptError, err:
+        print str(err)
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+            sys.exit(1)
+        elif opt in ("-n"):
+            verbose = False
+            break
+
+    if verbose:
+        print "%d unique active leases" % count_dhcp_leases()
+    else:
+        print count_dhcp_leases()
