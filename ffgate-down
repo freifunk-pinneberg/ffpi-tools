@@ -1,0 +1,25 @@
+#!/bin/sh
+
+#
+# Ausstellen der Gatewayfunktion 
+#
+
+# Batman-Adv Modul umschalten (Gatway-Modus aus)
+batctl gw off
+echo "Batman Gateway ausgeschaltet."
+echo "Warte 90 Sekunden ..."
+sleep 90
+
+# DHCPD ausschalten
+#/etc/init.d/isc-dhcp-server stop
+echo "Warte auf Freigabe der DHCP-Leases ..."
+
+# Warten bis keine aktiven DHCP-Leases da sind
+COUNT=`dhcpd-leases.py -n`
+while [ $COUNT -gt 0 ] ; do
+    echo "  $COUNT Leases übrig"
+    sleep 30
+    COUNT=`dhcpd-leases.py -n`
+done
+
+echo "Keine aktiven Leases mehr vorhanden."
