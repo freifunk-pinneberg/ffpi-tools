@@ -38,6 +38,7 @@ Version  Datum       Änderung(en)                                           von
 0.1      2015-10-18  Änderungsprotokoll eingebaut                           tho
 0.2      2016-08-30  Automatisierung Land des Exit-VPNs                     tho
 0.3      2016-12-04  DHCPD-Leases integrieren zur Anzeige der Clientanz.    tho
+0.4      2017-02-10  Communityunabhängig durch sitecode als Einstellung     tho
 
 """
 
@@ -65,7 +66,8 @@ cfg = {
     'daemon': False,
     'user': '',
     'group': 'zabbix',
-    'interface': 'bat0'
+    'interface': 'bat0',
+    'sitecode': 'ffpi'
 }
 
 # Definition der auszulesenden Meßwerte
@@ -96,7 +98,7 @@ def fn_node_vpn():
     return True
 
 def fn_node_net_mac():
-     return open('/sys/class/net/' + cfg['interface'] + '/address').read().strip()
+     return open('/sys/class/net/{0}/address'.format(cfg['interface'])).read().strip()
 
 def fn_node_net_mesh_ifaces():
     # TODO!
@@ -158,7 +160,7 @@ def fn_fastd_version():
     return call(['fastd', '-v'])[0].split(' ')[1]
 
 def fn_fastd_port():
-    for line in open('/etc/fastd/ffpi/fastd.conf'):
+    for line in open('/etc/fastd/{0}/fastd.conf'.format(cfg['sitecode'])):
         if line.startswith('bind'):
             return line.split(":")[1].rstrip(";\n")
 
@@ -215,17 +217,17 @@ def fn_hardware_nproc():
     return call(['nproc'])[0]
 
 def fn_fastd_peers():
-    # TODO fastd-Konfiguration auslesen /etc/fastd/ffpi/fastd.conf
+    # TODO fastd-Konfiguration auslesen /etc/fastd/<sitecode>/fastd.conf
     # 1. fastd über Socket abfragen
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        client.connect('/var/run/fastd/ffpi.sock')
+        client.connect('/var/run/fastd/{0}.sock'.format(cfg['sitecode']))
     except socket.error:
         return None
     data = json.loads(client.makefile('r').read())
     client.close()
     # 2. Gateways ermitteln (MACs)
-    with open('/sys/kernel/debug/batman_adv/bat0/gateways') as f:
+    with open('/sys/kernel/debug/batman_adv/{0}/gateways'.format(cfg['interface'])) as f:
         lines = f.readlines()
     gw_macs = set([gw[3:20] for gw in lines[1:]])
     # 3. Ergebnis ermitteln
