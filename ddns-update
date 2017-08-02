@@ -1,0 +1,160 @@
+#!/bin/bash
+
+#
+# Dieses Script befindet sich noch in der Entwicklung.
+# siehe: https://www.computerclub-pinneberg.de/dyndns
+#
+# Voraussetzungen:
+# - curl 
+#   bei SSL wird ggf. CA-Zertifikat benötigt
+# - nsupdate (dnsutils)
+
+
+#
+# DynDNS im Eigenbau
+# http://feitel.indeedgeek.de/2012/8/dyndns_selbstgebacken/
+#
+
+# Cache analog zu ddclient
+# Nach erfolgreichem Update wird mtime gesetzt
+
+# TODO Wenn die Uhrzeiten der Server nicht synchron sind, kann
+# das Update fehlschlagen.
+# -> Die Fehlercodes des Updates müssen ausgewertet werden und
+#    zumindest ein Logeintrag geschrieben werden, damit die
+#    Fehlersituation durch den Admin erkannt wird.
+# -> Timeout bei der Abfrage der IP-Adresse
+
+. /etc/dyndns/ddns.conf
+
+
+is_validip()
+{
+    case "$*" in
+        ""|*[!0-9.]*|*[!0-9]) return 1 ;;
+    esac
+    local IFS=.  ## local is bash-specific
+    set -- $*
+    [ $# -eq 4 ] &&
+    [ ${1:-666} -le 255 ] && [ ${2:-666} -le 255 ] &&
+#    [ ${3:-666} -le 255 ] && [ ${4:-666} -le 254 ]
+# Versatel liefert auch Adressen mit .255 am Ende!
+    [ ${3:-666} -le 255 ] && [ ${4:-666} -le 255 ]
+}
+
+update_cache()
+{
+    CACHE[ip]=$IPADDR
+    CACHE[mtime]=`date +%s`
+    if [ -t ] ; then
+        MODDATE=`date -d @${CACHE[mtime]} "+%a %b %d %T %Y"`
+        echo -e "\nNeuer Cache"
+        echo -e "-----------"
+        echo -e "HOST...: ${CACHE[host]}"
+        echo -e "IP.....: ${CACHE[ip]}"
+        echo -e "MTIME..: $MODDATE (${CACHE[mtime]})\n"
+    fi
+
+    # Alle Zeilen der alten Datei durchlaufen und nur
+    # diejenige mit unserem Hostnamen aktualisieren.
+    # Wenn unser Hostname nicht vorkam, dann eine Zeile
+    # anhängen
+
+    # Das ist noch nicht hübsch, funktioniert aber erstmal
+    # Besser: Nicht geänderte Werte aus dem alten Cache übernehmen
+    # Bei Neuanlage: Defaults definieren!
+
+
+    CACHELINE="atime=0,backupmx=0,custom=0,host=${CACHE[host]},ip=${CACHE[ip]},mtime=${CACHE[mtime]},mx=,static=0,status=good,warned-min-error-interval=0,warned-min-interval=0,wildcard=0,wtime=30 ${CACHE[host]}"
+    CACHEHIT=false
+    > $CACHEFILE.new
+    while read -r line
+    do
+        if [[ $line == *${CACHE[host]} ]]; then
+            echo $CACHELINE >> $CACHEFILE.new
+            CACHEHIT=true
+        else
+            echo $line >> $CACHEFILE.new
+        fi
+    done < "$CACHEFILE"
+    if ! $CACHEHIT ; then
+        echo $CACHELINE >> $CACHEFILE.new
+    fi
+    rm $CACHEFILE
+    mv $CACHEFILE.new $CACHEFILE
+}
+
+update_dns()
+{
+    echo -e "
+    update delete $HOST.$ZONE A
+    update add $HOST.$ZONE $TIMEOUT A $IPADDR
+    show
+    send" | /usr/bin/nsupdate -k $KEYFILE
+}
+
+# Wenn keine gültige IP-Adresse gefunden wurde, dann mit Fehler beenden
+#  TODO
+# Exitstatus von curl abfangen und auswerten
+# - Wenn Internetverbindung fehlt, kann der Name $MYIPUL nicht aufgelöst werden
+#   es kommt Exit Code 6
+# - Timeouts sing ggf. auch möglich
+# - Parameter -m begrenzt die maximale Zeit
+IPADDR=`curl -m 10 -s $MYIPURL | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"`
+if ! is_validip "$IPADDR"
+then
+    logger -t ddns-update[$$] No valid IP Address found $IPADDR
+    exit 1
+fi
+
+# Sicherstellen, daß die Cache-Datei existiert
+if [ ! -f $CACHEFILE ]; then
+    CACHEDIR=${CACHEFILE%/*}
+    if [ ! -d $CACHEDIR ]; then
+        mkdir $CACHEDIR
+        echo "Created Cache-Dir $CACHEDIR"
+    fi
+    touch $CACHEFILE
+    echo "Created Cachefile ${CACHEFILE##*/}"
+fi
+
+# Cache-Datei auswerten
+OPTIONS=`grep $HOST.$ZONE $CACHEFILE | cut -d' ' -f1 | tr ',', ' '`
+declare -A CACHE
+for O in ${OPTIONS[@]}; do
+    OPT=(${O//=/ })
+    CACHE[${OPT[0]}]=${OPT[1]}
+done
+if [[ $OPTIONS ]]; then
+    if [ -t ] ; then
+        MODDATE=`date -d @${CACHE[mtime]} "+%a %b %d %T %Y"`
+        echo -e "\nCache-Inhalt"
+        echo -e "------------"
+        echo -e "HOST...: ${CACHE[host]}"
+        echo -e "IP.....: ${CACHE[ip]}"
+        echo -e "MTIME..: $MODDATE (${CACHE[mtime]})\n"
+    fi
+else
+    # Host existiert nicht im Cache, 'host'-Eintrag für 
+    # neuen Datensatz vorbereiten
+    CACHE[host]=$HOST.$ZONE
+fi
+
+# Nur bei Adreßänderung updaten, spätestens jedoch nach einer
+# festgelegten Zeit (MAXAGE)
+
+if [[ "$IPADDR" != "${CACHE[ip]}" ]]; then
+    update_dns
+    logger -t ddns-update[$$] Dynamic DNS Record updated to $IPADDR
+    update_cache
+else
+    DIFF=$((`date +%s` - ${CACHE[mtime]}))
+    if [[ $DIFF -gt $MAXAGE ]]; then
+        update_dns
+        logger -t ddns-update[$$] Dynamic DNS Record updated to $IPADDR because of age
+        update_cache
+    fi
+fi
+
+exit 0
+                    

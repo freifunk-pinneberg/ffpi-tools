@@ -1,0 +1,4 @@
+# /etc/cron.d/ddns: crontab fragment for ddns-update
+
+# Renew dynamic IP address every 15 minutes
+05,20,35,50 *     * * *     root   /usr/local/bin/ddns-update > /dev/null 2>&1
