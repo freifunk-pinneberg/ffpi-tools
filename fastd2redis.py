@@ -12,6 +12,8 @@ import subprocess
 import datetime
 
 from rediscluster import StrictRedisCluster
+from rediscluster.exceptions import ClusterDownError
+from redis.exceptions import ConnectionError
 
 def get_gate_nodeid():
     # Die ID kann statisch angegeben werden, falls das nicht
@@ -50,9 +52,12 @@ def main(rc):
             except IndexError:
                 continue
             rckey = "fastd:tunnel:%s" % tunnel_id
-            rc.hset(rckey, 'key', key)
-            rc.hset(rckey, 'last_seen', now)
-            rc.hset(rckey, 'last_gate', gate_id)
+            try:
+                rc.hset(rckey, 'key', key)
+                rc.hset(rckey, 'last_seen', now)
+                rc.hset(rckey, 'last_gate', gate_id)
+            except ClusterDownError:
+                pass
 
 if __name__ == '__main__':
     startup_nodes = [{"host": "127.0.0.1", "port": "7000"}]
