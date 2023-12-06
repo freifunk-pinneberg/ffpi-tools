@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -39,6 +39,8 @@ Version  Datum       Änderung(en)                                           von
 0.2      2016-08-30  Automatisierung Land des Exit-VPNs                     tho
 0.3      2016-12-04  DHCPD-Leases integrieren zur Anzeige der Clientanz.    tho
 0.4      2017-02-10  Communityunabhängig durch sitecode als Einstellung     tho
+0.5      2022-10-05  Umbau auf python3 für Einsatz unter Debian 11          tho
+0.6      2023-01-02  -m bei batctl deprecated: durch meshif ersetzt         tho
 
 """
 
@@ -49,7 +51,8 @@ import platform
 import getopt
 import signal
 import daemon
-from collections import defaultdict, Mapping
+from collections import defaultdict
+from collections.abc import Mapping
 import json
 import subprocess
 import socket
@@ -58,6 +61,13 @@ import time
 import logging
 import re
 import datetime
+import functools
+
+__author__ = "Thomas Hooge"
+__copyright__ = "Public Domain"
+__version__ = "0.6"
+__email__ = "thomas@hoogi.de"
+__status__ = "Development"
 
 cfg = {
     'logfile': '/var/log/alfred-announced.log',
@@ -107,7 +117,7 @@ def fn_node_net_mesh_ifaces():
     # Die Stelle mit "bat0" müßte dynamisch aufgrund der Interfaces
     # zusammengebaut werden
     return [open('/sys/class/net/' + iface + '/address').read().strip()
-            for iface in map(lambda line: line.split(':')[0], call(['batctl', '-m', cfg['interface'], 'if']))]
+            for iface in map(lambda line: line.split(':')[0], call(['batctl', 'meshif', cfg['interface'], 'if']))]
 
 def fn_exitvpn_provider():
     """ 
@@ -151,7 +161,8 @@ def fn_fastd_enabled():
     - prüfe, ob das Script tatsächlich existiert
     """
     runlevel = int(call(['runlevel'])[0].split(' ')[1])
-    fname = glob.glob("/etc/rc%d.d/S??fastd" % runlevel)
+    #fname = glob.glob("/etc/rc%d.d/S??fastd" % runlevel)
+    fname = glob.glob("/etc/rc{:02d}.d/S??fastd".format(runlevel))
     if not fname:
         return False
     return os.path.isfile(fname[0])
@@ -168,7 +179,10 @@ def fn_firmware_base():
     return call(['lsb_release','-is'])[0]
 
 def fn_firmware_release():
-    return call(['lsb_release','-rs'])[0]
+    if fn_firmware_base() == 'Debian':
+        return call(['cat','/etc/debian_version'])[0]
+    else:
+        return call(['lsb_release','-rs'])[0]
 
 def fn_idletime():
     return float(open('/proc/uptime').read().split(' ')[1])
@@ -227,12 +241,14 @@ def fn_fastd_peers():
     data = json.loads(client.makefile('r').read())
     client.close()
     # 2. Gateways ermitteln (MACs)
-    with open('/sys/kernel/debug/batman_adv/{0}/gateways'.format(cfg['interface'])) as f:
-        lines = f.readlines()
+    # deprecated
+    #with open('/sys/kernel/debug/batman_adv/{0}/gateways'.format(cfg['interface'])) as f:
+    #    lines = f.readlines()
+    lines = call(['batctl', 'meshif', cfg['interface'], 'gwl'])
     gw_macs = set([gw[3:20] for gw in lines[1:]])
     # 3. Ergebnis ermitteln
     npeers = 0
-    for peer in data['peers'].itervalues():
+    for peer in data['peers'].values():
         if peer['connection']:
             if not set(peer['connection']['mac_addresses']) & gw_macs:
                 npeers += 1
@@ -285,21 +301,21 @@ item = {
 #items_by_interval = defaultdict(list)
 #for k, v  in item.iteritems():
 #    items_by_interval[v['interval']].append(k) 
-#print items_by_interval
+#print(items_by_interval)
 
 #for i in items_by_interval:
-#    print i
+#    print(i)
 
 # Datenstruktur zum Übertragen an Alfred.
 # Wir nehmen die optimale Variante, ggf. ist das *nicht*
 # JSON
 def dot_to_json(a):
     output = {}
-    for key, value in a.iteritems():
+    for key, value in a.items():
         path = key.split('.')
         if path[0] == 'json':
             path = path[1:]  
-        target = reduce(lambda d, k: d.setdefault(k, {}), path[:-1], output)
+        target = functools.reduce(lambda d, k: d.setdefault(k, {}), path[:-1], output)
         target[path[-1]] = value
     return output
 
@@ -327,12 +343,12 @@ def set_loglevel(nr):
     return level
 
 def usage():
-    print "Alfred Announce Daemon for Gateways"
-    print "Version %s" % __version__
-    print
-    print "Optionen"
-    print "  -d Programm als Daemon laufen lassen"
-    print
+    print("Alfred Announce Daemon for Gateways")
+    print("Version {}".format(__version__))
+    print()
+    print("Optionen")
+    print("  -d Programm als Daemon laufen lassen")
+    print()
 
 if __name__ == "__main__":
 
@@ -342,8 +358,8 @@ if __name__ == "__main__":
     # Kommandozeilenoptionen verarbeiten
     try:
         opts, args = getopt.gnu_getopt(sys.argv[1:], "dh", ["daemon", "help"])
-    except getopt.GetoptError, err:
-        print str(err)
+    except getopt.GetoptError as err:
+        print(str(err))
         sys.exit(2)   
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -363,13 +379,13 @@ if __name__ == "__main__":
     loglevel = set_loglevel(cfg['loglevel'])
     if loglevel:
         log.setLevel(loglevel)
-        log.info("%s started on %s" % (sys.argv[0], socket.gethostname()))
+        log.info("{} started on {}".format(sys.argv[0], socket.gethostname()))
     else:
         log.disabled = True
 
     # Zugeordnete Funktionen je Item ausführen
     result = {}
-    for k, v in item.iteritems():
+    for k, v in item.items():
         result[k] = v['exec']()  
 
     # Daten für Alfred aufbereiten, wir verwenden gzip
@@ -383,28 +399,28 @@ if __name__ == "__main__":
         statics = {}
     except ValueError:
         statics = {}
-        print "Syntax error in statics file, import failed"
+        print("Syntax error in statics file, import failed")
     merge_dict(data, statics)
 
     # Aufteilen in die jew. Datentypen
     nodeinfo = data['node']
     statistics = data['statistics']
     
-    cnodeinfo = zlib.compress(json.dumps(nodeinfo))
-    cstatistics = zlib.compress(json.dumps(statistics))
+    cnodeinfo = zlib.compress(bytes(json.dumps(nodeinfo), 'UTF-8'))
+    cstatistics = zlib.compress(bytes(json.dumps(statistics), 'UTF-8'))
 
     # Knoteninfos übertragen
     alfred = subprocess.Popen(['alfred', '-s', '158'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     streamdata = alfred.communicate(cnodeinfo)[0]
     if alfred.returncode != 0:
-        print "Communication error with alfred: %s" % streamdata
+        print("Communication error with alfred: {}".format(streamdata))
 
     # Statistik übertragen
     alfred = subprocess.Popen(['alfred', '-s', '159'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     streamdata = alfred.communicate(cstatistics)[0]
     if alfred.returncode != 0:
-        print "Communication error with alfred: %s" % streamdata
+        print("Communication error with alfred: {}".format(streamdata))
 
     # Zeitmessung beenden
     tn = time.time()
-    log.info(u"Benötigte Zeit: %.2f Minuten" % ((tn-t0)/60))
+    log.info("Benötigte Zeit: {:.2f} Minuten" .format((tn-t0)/60))
