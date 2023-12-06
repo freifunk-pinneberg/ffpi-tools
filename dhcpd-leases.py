@@ -1,13 +1,32 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Zähle aktive DHCP-Leases
 
-# Vergleiche
-# dhcp-lease-list --lease /var/lib/dhcp/dhcpd.leases
+Vergleiche dazu:
+  dhcp-lease-list --lease /var/lib/dhcp/dhcpd.leases
+
+Änderungsprotokoll
+==================
+
+Version  Datum       Änderung(en)                                           von
+-------- ----------- ------------------------------------------------------ ----
+1.0      ?
+1.1      2017-01-29                                                         tho
+2.0      2023-12-06  Umstellung auf Python 3                                tho
+
+"""
 
 import sys
 import getopt
 import re
 import datetime
+
+__author__ = "Thomas Hooge"
+__copyright__ = "Public Domain"
+__version__ = "2.0"
+__email__ = "thomas@hoogi.de"
+__status__ = "Development"
 
 def count_dhcp_leases():
     regex_leaseblock = re.compile(r"lease (?P<ip>\d+\.\d+\.\d+\.\d+) {(?P<config>[\s\S]+?)\n}")
@@ -26,12 +45,13 @@ def count_dhcp_leases():
     return leases
 
 def usage():
-    print "DHCP leases counter"
-    print "Version 1.1"
-    print
-    print "Options"
-    print " -n  numeric output only"
-    print
+    print("DHCP leases counter")
+    print("Version {}".format(__version__))
+    print()
+    print("Options")
+    print(" -h  show this help")
+    print(" -n  numeric output only")
+    print()
 
 if __name__ == "__main__":
 
@@ -39,8 +59,8 @@ if __name__ == "__main__":
 
     try:
         opts, args = getopt.gnu_getopt(sys.argv[1:], "nh", ["help"])
-    except getopt.GetoptError, err:
-        print str(err)
+    except getopt.GetoptError as err:
+        print(str(err))
         sys.exit(2)
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -51,6 +71,6 @@ if __name__ == "__main__":
             break
 
     if verbose:
-        print "%d unique active leases" % count_dhcp_leases()
+        print("%d unique active leases" % count_dhcp_leases())
     else:
-        print count_dhcp_leases()
+        print(count_dhcp_leases())
